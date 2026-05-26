@@ -116,3 +116,42 @@ Stage Summary:
 - Next level unlocks correctly after winning or drawing
 - "Next Level" button provides seamless progression between levels
 - Campaign map shows progress with stars, badges, and completion counters
+
+---
+Task ID: 4
+Agent: Super Z (Main)
+Task: Convert Tic Tac Toe to Android mobile app with Capacitor, configure icon, GitHub CI/CD, and APK build
+
+Work Log:
+- Fixed campaign progression bug: added `currentCampaignLevel` to Zustand persist partialize, created atomic `startCampaignLevel()` action
+- Configured Next.js for static export: changed `output: 'standalone'` to `output: 'export'`, added `images.unoptimized: true` and `trailingSlash: true`
+- Removed API route (incompatible with static export)
+- Installed Capacitor: @capacitor/core, @capacitor/cli, @capacitor/android
+- Initialized Capacitor with `npx cap init "Tic Tac Toe" "com.tictactoe.game" --web-dir out`
+- Added Android platform: `npx cap add android`
+- Configured c.png as launcher icon: copied to `android/app/src/main/res/drawable/c.png`, updated AndroidManifest.xml with `android:icon="@drawable/c"` and `android:roundIcon="@drawable/c"`
+- Configured Gradle for unsigned release APK: added `signingConfig signingConfigs.debug` to release build type
+- Created `.gitignore` for Node.js/Next.js/Android/Capacitor
+- Created GitHub repository: `wqmamo123-cloud/tic-tac-toe`
+- Pushed code to GitHub main branch
+- Created GitHub Actions workflow (`.github/workflows/android.yml`):
+  - Node.js 22 setup (required by Capacitor CLI 8.x)
+  - Bun setup for fast dependency install
+  - Next.js static export build
+  - Capacitor sync to Android
+  - JDK 21 setup
+  - Android SDK setup with license acceptance
+  - Gradle release APK build
+  - Dynamic APK path discovery and artifact upload
+- Debugged CI/CD failures recursively:
+  - Fix 1: Upgraded Node.js from 20 to 22 (Capacitor CLI 8.x requires Node >= 22)
+  - Fix 2: Fixed APK artifact path (signed release APK named `app-release.apk`, not `app-release-unsigned.apk`)
+- Final build succeeded: APK artifact uploaded (4.6 MB)
+
+Stage Summary:
+- Tic Tac Toe game fully converted to Android mobile app via Capacitor
+- Custom launcher icon (c.png) configured in AndroidManifest.xml
+- GitHub Actions CI/CD pipeline builds Android APK automatically on push
+- APK artifact available for download from GitHub Actions
+- All 5 game modes working: Single Player, Local Multiplayer, Online, Campaign, Tournament
+- Campaign progression bug fixed with atomic state management
