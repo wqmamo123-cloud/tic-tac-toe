@@ -5,10 +5,10 @@ import { motion } from 'framer-motion';
 import { useGameStore } from '@/lib/store/gameStore';
 import { THEMES } from '@/lib/game/types';
 import { soundManager, triggerHaptic } from '@/lib/game/sounds';
-import { Settings, Trophy, BarChart3, Volume2, VolumeX } from 'lucide-react';
+import { Settings, Trophy, BarChart3 } from 'lucide-react';
 
 export default function WelcomeScreen() {
-  const { setScreen, theme, soundEnabled, setSoundEnabled, setScreen: navigate } = useGameStore();
+  const { setScreen, theme, setScreen: navigate } = useGameStore();
   const t = THEMES[theme];
 
   const handleStart = () => {
@@ -20,7 +20,6 @@ export default function WelcomeScreen() {
   const handleExit = () => {
     soundManager.playClick();
     triggerHaptic(10);
-    // In a web environment, we can't actually close the tab, but we can try
     if (typeof window !== 'undefined') {
       window.close();
     }
@@ -36,7 +35,6 @@ export default function WelcomeScreen() {
         className="mb-6"
       >
         <div className="relative w-28 h-28 sm:w-36 sm:h-36">
-          {/* Animated X */}
           <motion.div
             animate={{ rotate: [0, 5, 0, -5, 0] }}
             transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
@@ -44,7 +42,6 @@ export default function WelcomeScreen() {
           >
             X
           </motion.div>
-          {/* Animated O */}
           <motion.div
             animate={{ rotate: [0, -5, 0, 5, 0] }}
             transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
@@ -99,7 +96,7 @@ export default function WelcomeScreen() {
         Exit
       </motion.button>
 
-      {/* Bottom Icons */}
+      {/* Bottom Icons — Sound toggle is now in the global top-right button */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -127,19 +124,6 @@ export default function WelcomeScreen() {
           title="Achievements"
         >
           <Trophy size={22} />
-        </button>
-        <button
-          onClick={() => {
-            const next = !soundEnabled;
-            setSoundEnabled(next);
-            soundManager.setEnabled(next);
-            if (next) soundManager.playClick();
-            triggerHaptic(10);
-          }}
-          className={`${t.textSecondary} hover:${t.accentText} transition-colors p-2`}
-          title="Toggle Sound"
-        >
-          {soundEnabled ? <Volume2 size={22} /> : <VolumeX size={22} />}
         </button>
         <button
           onClick={() => {

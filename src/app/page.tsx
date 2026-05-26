@@ -4,7 +4,8 @@ import React, { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useGameStore } from '@/lib/store/gameStore';
 import { THEMES } from '@/lib/game/types';
-import { soundManager } from '@/lib/game/sounds';
+import { soundManager, triggerHaptic } from '@/lib/game/sounds';
+import { Volume2, VolumeX } from 'lucide-react';
 import ParticleBackground from '@/components/game/ParticleBackground';
 
 // Screens
@@ -39,13 +40,36 @@ const screenComponents: Record<string, React.ComponentType> = {
 };
 
 export default function Home() {
-  const { currentScreen, theme, soundEnabled } = useGameStore();
+  const { currentScreen, theme, soundEnabled, setSoundEnabled } = useGameStore();
   const t = THEMES[theme];
 
-  // Sync sound manager
+  // Sync sound manager with store on mount + when soundEnabled changes
   useEffect(() => {
     soundManager.setEnabled(soundEnabled);
   }, [soundEnabled]);
+
+  // Start BGM on first user interaction
+  useEffect(() => {
+    const handleInteraction = () => {
+      if (!soundManager.muted) {
+        soundManager.startBGM();
+      }
+      // Remove listeners after first interaction
+      document.removeEventListener('click', handleInteraction);
+      document.removeEventListener('touchstart', handleInteraction);
+      document.removeEventListener('keydown', handleInteraction);
+    };
+
+    document.addEventListener('click', handleInteraction, { once: true });
+    document.addEventListener('touchstart', handleInteraction, { once: true });
+    document.addEventListener('keydown', handleInteraction, { once: true });
+
+    return () => {
+      document.removeEventListener('click', handleInteraction);
+      document.removeEventListener('touchstart', handleInteraction);
+      document.removeEventListener('keydown', handleInteraction);
+    };
+  }, []);
 
   // Prevent zoom on mobile
   useEffect(() => {
@@ -58,6 +82,12 @@ export default function Home() {
     }
   }, []);
 
+  const handleMuteToggle = () => {
+    triggerHaptic(10);
+    const newMuted = soundManager.toggleMute();
+    setSoundEnabled(!newMuted);
+  };
+
   const ScreenComponent = screenComponents[currentScreen] || WelcomeScreen;
 
   return (
@@ -66,6 +96,33 @@ export default function Home() {
     >
       {/* Particle Background */}
       <ParticleBackground />
+
+      {/* Global Mute Button — top-right corner, always visible */}
+      <motion.button
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 0.5 }}
+        onClick={handleMuteToggle}
+        className={`fixed top-3 right-3 z-50 w-10 h-10 rounded-full flex items-center justify-center
+          ${t.card} shadow-lg transition-all duration-200 hover:scale-110 active:scale-95`}
+        title={soundEnabled ? 'Mute' : 'Unmute'}
+      >
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={soundEnabled ? 'on' : 'off'}
+            initial={{ rotate: -90, opacity: 0 }}
+            animate={{ rotate: 0, opacity: 1 }}
+            exit={{ rotate: 90, opacity: 0 }}
+            transition={{ duration: 0.15 }}
+          >
+            {soundEnabled ? (
+              <Volume2 size={18} className={t.accentText} />
+            ) : (
+              <VolumeX size={18} className={t.textSecondary} />
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </motion.button>
 
       {/* Screen Content */}
       <div className="relative z-10">
@@ -84,5 +141,3 @@ export default function Home() {
     </div>
   );
 }
-// trigger reload
-

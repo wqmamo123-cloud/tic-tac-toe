@@ -1,5 +1,8 @@
 /**
- * Game Store - Central state management with Zustand
+ * Game Store — Central state management with Zustand
+ * - AI moves run via Web Worker (off-thread)
+ * - Player symbol selection (X or O)
+ * - Persistent sound/music mute state
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -18,10 +21,10 @@ import {
   type GameStats,
   ACHIEVEMENTS,
   generateCampaignLevels,
-  GRID_CONFIGS,
   THEMES,
 } from '../game/types';
-import { checkWinner, getWinningLine, getAIMove } from '../game/ai';
+import { checkWinner, getWinningLine } from '../game/ai';
+import { requestAIMove } from '../game/aiWorkerManager';
 
 interface GameState {
   // Screen navigation
@@ -37,8 +40,12 @@ interface GameState {
   setWinCondition: (wc: number) => void;
   aiDifficulty: AIDifficulty;
   setAIDifficulty: (diff: AIDifficulty) => void;
-  timeLimit: number; // seconds, 0 = no limit
+  timeLimit: number;
   setTimeLimit: (seconds: number) => void;
+
+  // Player symbol choice
+  playerSymbol: Player;
+  setPlayerSymbol: (symbol: Player) => void;
 
   // Board state
   board: Board;
@@ -111,6 +118,17 @@ interface GameState {
 
 const createEmptyBoard = (size: number): Board => Array(size * size).fill(null);
 
+/** Determine if the current player is the AI in single/campaign mode */
+function isAITurn(state: GameState): boolean {
+  if (state.gameMode !== 'single' && state.gameMode !== 'campaign') return false;
+  return state.currentPlayer !== state.playerSymbol;
+}
+
+/** Get the AI's symbol (opposite of player symbol) */
+function getAISymbol(playerSymbol: Player): Player {
+  return playerSymbol === 'X' ? 'O' : 'X';
+}
+
 export const useGameStore = create<GameState>()(
   persist(
     (set, get) => ({
@@ -129,6 +147,10 @@ export const useGameStore = create<GameState>()(
       setAIDifficulty: (diff) => set({ aiDifficulty: diff }),
       timeLimit: 0,
       setTimeLimit: (seconds) => set({ timeLimit: seconds }),
+
+      // Player symbol
+      playerSymbol: 'X',
+      setPlayerSymbol: (symbol) => set({ playerSymbol: symbol }),
 
       // Board
       board: createEmptyBoard(3),
@@ -172,7 +194,6 @@ export const useGameStore = create<GameState>()(
         }
         set({ campaignLevels: levels });
 
-        // Check achievement
         const completedCount = levels.filter((l) => l.completed).length;
         if (completedCount >= 5) get().unlockAchievement('campaign_5');
         if (completedCount >= 15) get().unlockAchievement('campaign_15');
@@ -236,7 +257,6 @@ export const useGameStore = create<GameState>()(
 
         set({ stats });
 
-        // Check achievements
         if (result === 'win') {
           get().unlockAchievement('first_win');
           if (stats.currentStreak >= 3) get().unlockAchievement('win_streak_3');
@@ -251,8 +271,7 @@ export const useGameStore = create<GameState>()(
           if (get().gridSize === 5) get().unlockAchievement('win_5x5');
           if (get().gridSize === 10) get().unlockAchievement('win_gomoku');
           if (get().timeLimit > 0) get().unlockAchievement('speed_demon');
-          const moveCount = get().moveHistory.length;
-          if (moveCount <= 5) get().unlockAchievement('quick_win');
+          if (get().moveHistory.length <= 5) get().unlockAchievement('quick_win');
         }
         if (stats.totalGames >= 10) get().unlockAchievement('play_10');
         if (stats.totalGames >= 50) get().unlockAchievement('play_50');
@@ -270,7 +289,7 @@ export const useGameStore = create<GameState>()(
       initGame: () => {
         const state = get();
         let board = createEmptyBoard(state.gridSize);
-        let currentPlayer: Player = 'X';
+        let currentPlayer: Player = 'X'; // X always goes first
 
         // For campaign mode, apply pre-filled cells
         if (state.gameMode === 'campaign' && state.currentCampaignLevel > 0) {
@@ -279,7 +298,6 @@ export const useGameStore = create<GameState>()(
             for (const pf of level.preFilled) {
               board[pf.index] = pf.value;
             }
-            // If there are pre-filled O's, check if X should go first or it's already O's turn
             const oCount = level.preFilled.filter((p) => p.value === 'O').length;
             const xCount = level.preFilled.filter((p) => p.value === 'X').length;
             if (oCount > xCount) currentPlayer = 'X';
@@ -298,6 +316,11 @@ export const useGameStore = create<GameState>()(
           turnStartTime: Date.now(),
           timeRemaining: state.timeLimit,
         });
+
+        // If AI goes first (player chose O), trigger AI turn immediately
+        if ((state.gameMode === 'single' || state.gameMode === 'campaign') && currentPlayer !== state.playerSymbol) {
+          setTimeout(() => get().startAITurn(), 500);
+        }
       },
 
       makeMove: (index) => {
@@ -317,14 +340,12 @@ export const useGameStore = create<GameState>()(
           else if (result === 'X') newScores.X++;
           else newScores.O++;
 
-          // Update stats
-          if (state.gameMode === 'single') {
-            const humanPlayer: Player = 'X';
+          // Update stats based on who won relative to player symbol
+          if (state.gameMode === 'single' || state.gameMode === 'campaign') {
             if (result === 'draw') state.updateStats('draw');
-            else if (result === humanPlayer) state.updateStats('win');
+            else if (result === state.playerSymbol) state.updateStats('win');
             else state.updateStats('loss');
           } else if (state.gameMode === 'local' || state.gameMode === 'tournament') {
-            // For local/tournament, X winning = win, O winning = loss from P1 perspective
             if (result === 'draw') state.updateStats('draw');
             else if (result === 'X') state.updateStats('win');
             else state.updateStats('loss');
@@ -342,7 +363,7 @@ export const useGameStore = create<GameState>()(
           return;
         }
 
-        const nextPlayer = state.currentPlayer === 'X' ? 'O' : 'X';
+        const nextPlayer: Player = state.currentPlayer === 'X' ? 'O' : 'X';
         set({
           board: newBoard,
           currentPlayer: nextPlayer,
@@ -351,14 +372,10 @@ export const useGameStore = create<GameState>()(
           timeRemaining: state.timeLimit,
         });
 
-        // If single player and it's AI's turn
-        if (
-          state.gameMode === 'single' ||
-          (state.gameMode === 'campaign')
-        ) {
-          if (nextPlayer === 'O') {
-            setTimeout(() => state.startAITurn(), 300);
-          }
+        // If next player is AI, trigger AI turn
+        const updatedState = get();
+        if (isAITurn(updatedState)) {
+          setTimeout(() => get().startAITurn(), 200);
         }
       },
 
@@ -366,20 +383,20 @@ export const useGameStore = create<GameState>()(
         const state = get();
         if (state.moveHistory.length === 0 || !state.gameActive) return;
         if (state.gameMode === 'single' || state.gameMode === 'campaign') {
-          // Undo 2 moves (player + AI)
-          if (state.moveHistory.length < 2) return;
-          const newHistory = state.moveHistory.slice(0, -2);
+          // Undo back to the player's own move (undo player + AI)
+          const stepsToUndo = isAITurn({ ...state, currentPlayer: state.currentPlayer }) ? 1 : 2;
+          if (state.moveHistory.length < stepsToUndo) return;
+          const newHistory = state.moveHistory.slice(0, -stepsToUndo);
           const newBoard = createEmptyBoard(state.gridSize);
           for (const move of newHistory) {
             newBoard[move.index] = move.player;
           }
           set({
             board: newBoard,
-            currentPlayer: 'X',
+            currentPlayer: state.playerSymbol, // Always return to player's turn
             moveHistory: newHistory,
           });
         } else {
-          // Undo 1 move for local multiplayer
           const lastMove = state.moveHistory[state.moveHistory.length - 1];
           const newHistory = state.moveHistory.slice(0, -1);
           const newBoard = [...state.board];
@@ -398,36 +415,38 @@ export const useGameStore = create<GameState>()(
 
       startAITurn: () => {
         const state = get();
-        if (!state.gameActive) return;
+        if (!state.gameActive || !isAITurn(state)) return;
 
         set({ isAIThinking: true });
 
-        // Use setTimeout to not block UI
-        setTimeout(() => {
-          const currentState = get();
-          if (!currentState.gameActive) return;
+        let difficulty = state.aiDifficulty;
+        if (state.gameMode === 'campaign') {
+          const level = state.campaignLevels.find((l) => l.id === state.currentCampaignLevel);
+          if (level) difficulty = level.difficulty;
+        }
 
-          let difficulty = currentState.aiDifficulty;
-          if (currentState.gameMode === 'campaign') {
-            const level = currentState.campaignLevels.find(
-              (l) => l.id === currentState.currentCampaignLevel
-            );
-            if (level) difficulty = level.difficulty;
-          }
+        const aiSymbol = getAISymbol(state.playerSymbol);
 
-          const aiMove = getAIMove(
-            currentState.board,
-            currentState.gridSize,
-            currentState.winCondition,
-            difficulty,
-            'O'
-          );
-
-          if (aiMove !== -1) {
-            currentState.makeMove(aiMove);
-          }
-          set({ isAIThinking: false });
-        }, 400 + Math.random() * 400);
+        // Use Web Worker for AI computation
+        requestAIMove(
+          state.board,
+          state.gridSize,
+          state.winCondition,
+          difficulty,
+          aiSymbol
+        )
+          .then((move) => {
+            const currentState = get();
+            if (!currentState.gameActive) return;
+            if (move !== -1) {
+              currentState.makeMove(move);
+            }
+            set({ isAIThinking: false });
+          })
+          .catch(() => {
+            // Fallback: just set not thinking
+            set({ isAIThinking: false });
+          });
       },
 
       lastMoveTime: 0,
@@ -447,6 +466,7 @@ export const useGameStore = create<GameState>()(
         player1Name: state.player1Name,
         player2Name: state.player2Name,
         aiDifficulty: state.aiDifficulty,
+        playerSymbol: state.playerSymbol,
       }),
     }
   )

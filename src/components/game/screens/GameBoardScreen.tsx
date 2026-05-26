@@ -25,8 +25,7 @@ export default function GameBoardScreen() {
     gameMode,
     aiDifficulty,
     timeLimit,
-    turnStartTime,
-    timeRemaining,
+    playerSymbol,
     makeMove,
     undoMove,
     resetGame,
@@ -34,7 +33,6 @@ export default function GameBoardScreen() {
     initGame,
     player1Name,
     player2Name,
-    hapticEnabled,
   } = useGameStore();
 
   const t = THEMES[theme];
@@ -44,6 +42,11 @@ export default function GameBoardScreen() {
   const [countdown, setCountdown] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Determine if current turn belongs to the human player
+  const isHumanTurn = gameMode === 'single' || gameMode === 'campaign'
+    ? currentPlayer === playerSymbol
+    : true; // In local/tournament, it's always a human turn
+
   // Time attack countdown
   useEffect(() => {
     if (!gameActive || timeLimit === 0 || winner) {
@@ -52,9 +55,8 @@ export default function GameBoardScreen() {
     }
 
     // Only countdown for human player
-    if (gameMode === 'single' && currentPlayer === 'O') {
-      return;
-    }
+    if (!isHumanTurn) return;
+
     const start = Date.now();
 
     timerRef.current = setInterval(() => {
@@ -70,17 +72,14 @@ export default function GameBoardScreen() {
         clearInterval(timerRef.current!);
         soundManager.playTimeout();
         triggerHaptic([50, 50, 50]);
-        // Skip turn - switch to next player
+        // Skip turn
         const state = useGameStore.getState();
         if (state.gameActive) {
+          const nextPlayer: Player = state.currentPlayer === 'X' ? 'O' : 'X';
           useGameStore.setState({
-            currentPlayer: state.currentPlayer === 'X' ? 'O' : 'X',
+            currentPlayer: nextPlayer,
             turnStartTime: Date.now(),
           });
-          // If AI turn after timeout
-          if (state.gameMode === 'single' && state.currentPlayer === 'X') {
-            setTimeout(() => state.startAITurn(), 300);
-          }
         }
       }
     }, 200);
@@ -88,33 +87,43 @@ export default function GameBoardScreen() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [currentPlayer, gameActive, winner, timeLimit, gameMode]);
+  }, [currentPlayer, gameActive, winner, timeLimit, gameMode, isHumanTurn]);
 
   // Play win/lose/draw sounds
   useEffect(() => {
-    if (winner === 'X' || winner === 'O') {
-      if (gameMode === 'single' && winner === 'O') {
-        soundManager.playLose();
-      } else {
-        soundManager.playWin();
-      }
-      triggerHaptic([50, 50, 100]);
-    } else if (winner === 'draw') {
+    if (!winner) return;
+    if (winner === 'draw') {
       soundManager.playDraw();
       triggerHaptic(30);
+    } else if (gameMode === 'single' || gameMode === 'campaign') {
+      // In single player, check if player won or AI won
+      if (winner === playerSymbol) {
+        soundManager.playWin();
+      } else {
+        soundManager.playLose();
+      }
+      triggerHaptic([50, 50, 100]);
+    } else {
+      soundManager.playWin();
+      triggerHaptic([50, 50, 100]);
     }
-  }, [winner, gameMode]);
+  }, [winner, gameMode, playerSymbol]);
 
   const handleCellClick = useCallback(
     (index: number) => {
       if (!gameActive || board[index] !== null || isAIThinking) return;
-      if (gameMode === 'single' && currentPlayer === 'O') return;
+      if (!isHumanTurn) return;
 
-      soundManager.playMoveX();
+      // Play appropriate sound for the symbol being placed
+      if (currentPlayer === 'X') {
+        soundManager.playMoveX();
+      } else {
+        soundManager.playMoveO();
+      }
       triggerHaptic(10);
       makeMove(index);
     },
-    [gameActive, board, isAIThinking, currentPlayer, gameMode, makeMove]
+    [gameActive, board, isAIThinking, currentPlayer, gameMode, makeMove, isHumanTurn]
   );
 
   const handleUndo = () => {
@@ -134,21 +143,26 @@ export default function GameBoardScreen() {
     setScreen('welcome');
   };
 
-  // Calculate cell size based on grid and screen
   const maxBoardSize = Math.min(
     typeof window !== 'undefined' ? Math.min(window.innerWidth - 32, 500) : 400,
     500
   );
-  const cellSize = Math.floor(maxBoardSize / gridSize);
 
   const getPlayerName = (player: Player) => {
-    if (player === 'X') {
-      if (gameMode === 'single') return 'You';
-      return player1Name;
+    if (gameMode === 'single' || gameMode === 'campaign') {
+      return player === playerSymbol ? 'You' : 'AI';
     }
-    if (gameMode === 'single') return 'AI';
+    if (player === 'X') return player1Name;
     return player2Name;
   };
+
+  // Score labels based on game mode
+  const scoreLabelX = gameMode === 'single' || gameMode === 'campaign'
+    ? (playerSymbol === 'X' ? 'You' : 'AI')
+    : 'P1';
+  const scoreLabelO = gameMode === 'single' || gameMode === 'campaign'
+    ? (playerSymbol === 'O' ? 'You' : 'AI')
+    : 'P2';
 
   return (
     <div className="flex flex-col min-h-screen px-4 py-4">
@@ -167,9 +181,7 @@ export default function GameBoardScreen() {
         <div className={`${t.card} rounded-xl px-3 py-2 flex items-center gap-4 text-sm`}>
           <div className="text-center">
             <div className={`${t.xColor} font-bold`}>{scores.X}</div>
-            <div className={`${t.textSecondary} text-xs`}>
-              {gameMode === 'single' ? 'You' : 'P1'}
-            </div>
+            <div className={`${t.textSecondary} text-xs`}>{scoreLabelX}</div>
           </div>
           <div className="text-center">
             <div className={`${t.textSecondary} font-bold`}>{scores.draws}</div>
@@ -177,19 +189,17 @@ export default function GameBoardScreen() {
           </div>
           <div className="text-center">
             <div className={`${t.oColor} font-bold`}>{scores.O}</div>
-            <div className={`${t.textSecondary} text-xs`}>
-              {gameMode === 'single' ? 'AI' : 'P2'}
-            </div>
+            <div className={`${t.textSecondary} text-xs`}>{scoreLabelO}</div>
           </div>
         </div>
 
-        <div className="w-10" /> {/* Spacer */}
+        <div className="w-10" />
       </div>
 
       {/* Turn Indicator */}
       <AnimatePresence mode="wait">
         <motion.div
-          key={currentPlayer + winner}
+          key={currentPlayer + String(winner)}
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 10 }}
@@ -232,7 +242,7 @@ export default function GameBoardScreen() {
       </AnimatePresence>
 
       {/* Time Attack Timer */}
-      {timeLimit > 0 && gameActive && !winner && countdown !== null && (
+      {timeLimit > 0 && gameActive && !winner && countdown !== null && isHumanTurn && (
         <div className="flex justify-center mb-3">
           <motion.div
             animate={countdown <= 3 ? { scale: [1, 1.2, 1] } : {}}
@@ -268,26 +278,24 @@ export default function GameBoardScreen() {
         >
           {board.map((cell, index) => {
             const isWinCell = winningLine?.includes(index);
-            const row = Math.floor(index / gridSize);
-            const col = index % gridSize;
 
             return (
               <motion.button
                 key={index}
-                whileHover={cell === null && gameActive && !isAIThinking ? { scale: 1.05 } : {}}
-                whileTap={cell === null && gameActive && !isAIThinking ? { scale: 0.95 } : {}}
+                whileHover={cell === null && gameActive && !isAIThinking && isHumanTurn ? { scale: 1.05 } : {}}
+                whileTap={cell === null && gameActive && !isAIThinking && isHumanTurn ? { scale: 0.95 } : {}}
                 onClick={() => handleCellClick(index)}
                 className={`
                   aspect-square rounded-lg sm:rounded-xl flex items-center justify-center
                   transition-colors duration-150 relative overflow-hidden
-                  ${cell === null && gameActive && !isAIThinking ? `${t.cell} cursor-pointer` : t.cell}
+                  ${cell === null && gameActive && !isAIThinking && isHumanTurn ? `${t.cell} cursor-pointer` : t.cell}
                   ${isWinCell ? 'ring-2 ring-yellow-400 bg-yellow-400/10' : ''}
                 `}
                 style={{
                   fontSize: gridSize <= 3 ? '2rem' : gridSize <= 5 ? '1.5rem' : '0.9rem',
                   minHeight: gridSize <= 3 ? '80px' : gridSize <= 5 ? '55px' : '28px',
                 }}
-                disabled={cell !== null || !gameActive || isAIThinking}
+                disabled={cell !== null || !gameActive || isAIThinking || !isHumanTurn}
               >
                 <AnimatePresence mode="wait">
                   {cell && (
@@ -306,7 +314,7 @@ export default function GameBoardScreen() {
                   )}
                 </AnimatePresence>
                 {/* Hover preview */}
-                {cell === null && gameActive && !isAIThinking && !winner && (
+                {cell === null && gameActive && !isAIThinking && !winner && isHumanTurn && (
                   <span
                     className={`absolute opacity-0 hover:opacity-20 transition-opacity duration-200 font-black ${
                       currentPlayer === 'X' ? t.xColor : t.oColor
@@ -346,7 +354,6 @@ export default function GameBoardScreen() {
           <RotateCcw size={20} />
         </motion.button>
 
-        {/* Game Over: Play Again */}
         {winner && (
           <motion.button
             initial={{ scale: 0 }}
@@ -365,11 +372,11 @@ export default function GameBoardScreen() {
         )}
       </div>
 
-      {/* Difficulty badge */}
-      {gameMode === 'single' && (
+      {/* Info badge */}
+      {(gameMode === 'single' || gameMode === 'campaign') && (
         <div className="text-center mb-2">
           <span className={`${t.textSecondary} text-xs uppercase tracking-wide`}>
-            {aiDifficulty} AI • {gridSize}×{gridSize}
+            {aiDifficulty} AI • {gridSize}×{gridSize} • You play {playerSymbol}
           </span>
         </div>
       )}

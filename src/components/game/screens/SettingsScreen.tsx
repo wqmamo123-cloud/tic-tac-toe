@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
 import { useGameStore } from '@/lib/store/gameStore';
 import { THEMES, ThemeName, X_SKINS, O_SKINS } from '@/lib/game/types';
 import { soundManager, triggerHaptic } from '@/lib/game/sounds';
-import { ArrowLeft, Palette, Smile, Volume2, VolumeX, Vibrate, VibrateOff } from 'lucide-react';
+import { ArrowLeft, Palette, Smile, Vibrate, VibrateOff, Volume2, VolumeX } from 'lucide-react';
 
 const THEME_LIST: { id: ThemeName; name: string; preview: string }[] = [
   { id: 'light', name: 'Light', preview: '☀️' },
@@ -135,19 +135,21 @@ export default function SettingsScreen() {
         <div>
           <h3 className={`${t.text} font-bold mb-3`}>Audio & Feedback</h3>
           <div className="space-y-2">
+            {/* Global Sound Toggle — syncs with top-right mute button */}
             <motion.button
               whileTap={{ scale: 0.98 }}
               onClick={() => {
-                const next = !soundEnabled;
-                setSoundEnabled(next);
-                soundManager.setEnabled(next);
-                if (next) soundManager.playClick();
+                const newMuted = soundManager.toggleMute();
+                setSoundEnabled(!newMuted);
               }}
               className={`${t.card} w-full rounded-xl p-4 flex items-center justify-between`}
             >
               <div className="flex items-center gap-3">
                 {soundEnabled ? <Volume2 size={18} className={t.accentText} /> : <VolumeX size={18} className={t.textSecondary} />}
-                <span className={`${t.text} font-medium`}>Sound Effects</span>
+                <div>
+                  <span className={`${t.text} font-medium`}>Sound & Music</span>
+                  <p className={`text-xs ${t.textSecondary}`}>Controls both BGM and SFX globally</p>
+                </div>
               </div>
               <div className={`w-10 h-6 rounded-full transition-colors ${soundEnabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
                 <div className={`w-5 h-5 rounded-full bg-white shadow transform transition-transform ${soundEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
