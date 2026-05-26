@@ -351,6 +351,23 @@ export const useGameStore = create<GameState>()(
             else state.updateStats('loss');
           }
 
+          // Campaign: mark level as completed and award stars
+          if (state.gameMode === 'campaign' && state.currentCampaignLevel > 0) {
+            if (result === state.playerSymbol) {
+              // Player won — award stars based on performance
+              const movesUsed = newHistory.filter((m) => m.player === state.playerSymbol).length;
+              const totalCells = state.gridSize * state.gridSize;
+              let stars = 1; // At least 1 star for winning
+              if (movesUsed <= Math.ceil(totalCells * 0.4)) stars = 3;   // Won quickly = 3 stars
+              else if (movesUsed <= Math.ceil(totalCells * 0.6)) stars = 2; // Decent speed = 2 stars
+              state.completeCampaignLevel(state.currentCampaignLevel, stars);
+            } else if (result === 'draw') {
+              // Draw — mark as completed with 0 stars (still unlocks next level)
+              state.completeCampaignLevel(state.currentCampaignLevel, 0);
+            }
+            // Loss: don't complete the level
+          }
+
           set({
             board: newBoard,
             winner: result,

@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '@/lib/store/gameStore';
 import { THEMES, X_SKINS, O_SKINS, type Player } from '@/lib/game/types';
 import { soundManager, triggerHaptic } from '@/lib/game/sounds';
-import { Home, RotateCcw, Undo2, Clock } from 'lucide-react';
+import { Home, RotateCcw, Undo2, Clock, ArrowRight, Map, Star } from 'lucide-react';
 
 export default function GameBoardScreen() {
   const {
@@ -33,6 +33,12 @@ export default function GameBoardScreen() {
     initGame,
     player1Name,
     player2Name,
+    campaignLevels,
+    currentCampaignLevel,
+    setCurrentCampaignLevel,
+    setGridSize,
+    setWinCondition,
+    setGameMode,
   } = useGameStore();
 
   const t = THEMES[theme];
@@ -42,10 +48,27 @@ export default function GameBoardScreen() {
   const [countdown, setCountdown] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Campaign helpers
+  const currentLevel = campaignLevels.find((l) => l.id === currentCampaignLevel);
+  const nextLevel = currentCampaignLevel > 0
+    ? campaignLevels.find((l) => l.id === currentCampaignLevel + 1)
+    : null;
+  const isLastLevel = currentCampaignLevel > 0 && !nextLevel;
+
+  // Get the stars earned for the current campaign level (after game ends)
+  const completedLevel = winner && gameMode === 'campaign' && currentCampaignLevel > 0
+    ? campaignLevels.find((l) => l.id === currentCampaignLevel)
+    : null;
+  const earnedStars = completedLevel?.stars ?? 0;
+
   // Determine if current turn belongs to the human player
   const isHumanTurn = gameMode === 'single' || gameMode === 'campaign'
     ? currentPlayer === playerSymbol
     : true; // In local/tournament, it's always a human turn
+
+  // Determine if player won (for campaign)
+  const playerWon = gameMode === 'campaign' && winner === playerSymbol;
+  const playerDraw = gameMode === 'campaign' && winner === 'draw';
 
   // Time attack countdown
   useEffect(() => {
@@ -140,7 +163,29 @@ export default function GameBoardScreen() {
 
   const handleHome = () => {
     soundManager.playClick();
-    setScreen('welcome');
+    if (gameMode === 'campaign') {
+      setScreen('campaign-map');
+    } else {
+      setScreen('welcome');
+    }
+  };
+
+  const handleNextLevel = () => {
+    if (!nextLevel) return;
+    soundManager.playClick();
+    triggerHaptic(20);
+    setCurrentCampaignLevel(nextLevel.id);
+    setGridSize(nextLevel.gridSize);
+    setWinCondition(nextLevel.winCondition);
+    setGameMode('campaign');
+    useGameStore.setState({ aiDifficulty: nextLevel.difficulty });
+    initGame();
+  };
+
+  const handleBackToMap = () => {
+    soundManager.playClick();
+    triggerHaptic(15);
+    setScreen('campaign-map');
   };
 
   const maxBoardSize = Math.min(
@@ -206,13 +251,42 @@ export default function GameBoardScreen() {
           className="text-center mb-4"
         >
           {winner ? (
-            <div className={`${t.text} text-lg sm:text-xl font-bold`}>
-              {winner === 'draw' ? (
-                "It's a Draw!"
-              ) : (
-                <span className={winner === 'X' ? t.xColor : t.oColor}>
-                  {getPlayerName(winner as Player)} Wins!
-                </span>
+            <div>
+              <div className={`${t.text} text-lg sm:text-xl font-bold`}>
+                {winner === 'draw' ? (
+                  "It's a Draw!"
+                ) : (
+                  <span className={winner === 'X' ? t.xColor : t.oColor}>
+                    {getPlayerName(winner as Player)} Wins!
+                  </span>
+                )}
+              </div>
+              {/* Campaign stars display */}
+              {gameMode === 'campaign' && currentCampaignLevel > 0 && (playerWon || playerDraw) && (
+                <motion.div
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ delay: 0.3, type: 'spring', stiffness: 200 }}
+                  className="flex items-center justify-center gap-1 mt-2"
+                >
+                  {[1, 2, 3].map((star) => (
+                    <motion.div
+                      key={star}
+                      initial={{ scale: 0, rotate: -180 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      transition={{ delay: 0.4 + star * 0.15, type: 'spring', stiffness: 300 }}
+                    >
+                      <Star
+                        size={24}
+                        className={
+                          star <= earnedStars
+                            ? 'text-yellow-500 fill-yellow-500'
+                            : 'text-gray-400 dark:text-gray-600'
+                        }
+                      />
+                    </motion.div>
+                  ))}
+                </motion.div>
               )}
             </div>
           ) : isAIThinking ? (
@@ -240,6 +314,15 @@ export default function GameBoardScreen() {
           )}
         </motion.div>
       </AnimatePresence>
+
+      {/* Campaign Level Name */}
+      {gameMode === 'campaign' && currentLevel && (
+        <div className="text-center mb-1">
+          <span className={`${t.accentText} text-xs font-bold uppercase tracking-wide`}>
+            Level {currentLevel.id}: {currentLevel.name}
+          </span>
+        </div>
+      )}
 
       {/* Time Attack Timer */}
       {timeLimit > 0 && gameActive && !winner && countdown !== null && isHumanTurn && (
@@ -348,13 +431,75 @@ export default function GameBoardScreen() {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={handleReset}
-          className={`${t.card} p-3 rounded-xl ${t.textSecondary} hover:shadow-md transition-all`}
+          disabled={gameMode === 'campaign' && !!winner}
+          className={`${t.card} p-3 rounded-xl ${t.textSecondary} hover:shadow-md transition-all disabled:opacity-30 disabled:cursor-not-allowed`}
           title="Restart"
         >
           <RotateCcw size={20} />
         </motion.button>
 
-        {winner && (
+        {/* Campaign mode: show specific buttons after game ends */}
+        {winner && gameMode === 'campaign' && currentCampaignLevel > 0 && (
+          <>
+            {playerWon && nextLevel && (
+              <motion.button
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleNextLevel}
+                className={`${t.button} px-5 py-3 rounded-xl font-bold shadow-lg flex items-center gap-2`}
+              >
+                Next Level
+                <ArrowRight size={18} />
+              </motion.button>
+            )}
+            {playerWon && isLastLevel && (
+              <motion.button
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleBackToMap}
+                className="bg-gradient-to-r from-yellow-500 to-amber-500 text-white px-5 py-3 rounded-xl font-bold shadow-lg flex items-center gap-2"
+              >
+                All Clear!
+                <Star size={18} className="fill-white" />
+              </motion.button>
+            )}
+            {(!playerWon || isLastLevel) && !playerWon && (
+              <motion.button
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => {
+                  soundManager.playClick();
+                  triggerHaptic(15);
+                  resetGame();
+                }}
+                className={`${t.button} px-5 py-3 rounded-xl font-bold shadow-lg`}
+              >
+                Try Again
+              </motion.button>
+            )}
+            <motion.button
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.1 }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleBackToMap}
+              className={`${t.card} px-4 py-3 rounded-xl font-medium ${t.text} flex items-center gap-2 hover:shadow-md transition-all`}
+            >
+              <Map size={16} />
+              Map
+            </motion.button>
+          </>
+        )}
+
+        {/* Non-campaign: Play Again button */}
+        {winner && gameMode !== 'campaign' && (
           <motion.button
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
@@ -376,7 +521,10 @@ export default function GameBoardScreen() {
       {(gameMode === 'single' || gameMode === 'campaign') && (
         <div className="text-center mb-2">
           <span className={`${t.textSecondary} text-xs uppercase tracking-wide`}>
-            {aiDifficulty} AI • {gridSize}×{gridSize} • You play {playerSymbol}
+            {gameMode === 'campaign' && currentLevel
+              ? `${currentLevel.difficulty} AI • ${currentLevel.gridSize}×${currentLevel.gridSize} • Level ${currentLevel.id}/30`
+              : `${aiDifficulty} AI • ${gridSize}×${gridSize} • You play ${playerSymbol}`
+            }
           </span>
         </div>
       )}
