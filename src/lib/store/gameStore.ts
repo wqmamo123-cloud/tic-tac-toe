@@ -427,6 +427,29 @@ export const useGameStore = create<GameState>()(
 
         const aiSymbol = getAISymbol(state.playerSymbol);
 
+        // Safety timeout: if AI doesn't respond in 2s, force fallback
+        const safetyTimeout = setTimeout(() => {
+          const current = get();
+          if (current.isAIThinking) {
+            console.warn('AI timeout — running fallback synchronously');
+            try {
+              // Dynamic import fallback to synchronous AI
+              import('../game/ai').then(({ getAIMove }) => {
+                const move = getAIMove(
+                  current.board, current.gridSize, current.winCondition,
+                  difficulty, aiSymbol
+                );
+                set({ isAIThinking: false });
+                if (move !== -1 && current.gameActive) {
+                  get().makeMove(move);
+                }
+              });
+            } catch {
+              set({ isAIThinking: false });
+            }
+          }
+        }, 2000);
+
         // Use Web Worker for AI computation
         requestAIMove(
           state.board,
@@ -436,16 +459,34 @@ export const useGameStore = create<GameState>()(
           aiSymbol
         )
           .then((move) => {
+            clearTimeout(safetyTimeout);
+            // CRITICAL: Set isAIThinking to false BEFORE calling makeMove,
+            // because makeMove has a guard that returns early when isAIThinking is true
+            set({ isAIThinking: false });
             const currentState = get();
             if (!currentState.gameActive) return;
             if (move !== -1) {
               currentState.makeMove(move);
             }
-            set({ isAIThinking: false });
           })
           .catch(() => {
-            // Fallback: just set not thinking
-            set({ isAIThinking: false });
+            clearTimeout(safetyTimeout);
+            // Fallback: run synchronously
+            try {
+              const current = get();
+              import('../game/ai').then(({ getAIMove }) => {
+                const fallbackMove = getAIMove(
+                  current.board, current.gridSize, current.winCondition,
+                  difficulty, aiSymbol
+                );
+                set({ isAIThinking: false });
+                if (fallbackMove !== -1 && current.gameActive) {
+                  get().makeMove(fallbackMove);
+                }
+              });
+            } catch {
+              set({ isAIThinking: false });
+            }
           });
       },
 

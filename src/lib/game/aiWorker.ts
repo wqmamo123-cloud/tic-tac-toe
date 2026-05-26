@@ -3,7 +3,7 @@
  * Prevents UI freezing on large grids
  */
 
-import { getAIMove, type Board, type AIDifficulty } from '../game/ai';
+import { getAIMove, type Board, type AIDifficulty } from './ai';
 
 interface AIWorkerRequest {
   board: Board;
