@@ -30,15 +30,11 @@ export default function GameBoardScreen() {
     undoMove,
     resetGame,
     setScreen,
-    initGame,
     player1Name,
     player2Name,
     campaignLevels,
     currentCampaignLevel,
-    setCurrentCampaignLevel,
-    setGridSize,
-    setWinCondition,
-    setGameMode,
+    startCampaignLevel,
   } = useGameStore();
 
   const t = THEMES[theme];
@@ -174,12 +170,8 @@ export default function GameBoardScreen() {
     if (!nextLevel) return;
     soundManager.playClick();
     triggerHaptic(20);
-    setCurrentCampaignLevel(nextLevel.id);
-    setGridSize(nextLevel.gridSize);
-    setWinCondition(nextLevel.winCondition);
-    setGameMode('campaign');
-    useGameStore.setState({ aiDifficulty: nextLevel.difficulty });
-    initGame();
+    // Use atomic startCampaignLevel to batch all state changes
+    startCampaignLevel(nextLevel.id);
   };
 
   const handleBackToMap = () => {
@@ -468,33 +460,49 @@ export default function GameBoardScreen() {
               </motion.button>
             )}
             {(!playerWon || isLastLevel) && !playerWon && (
+              <>
+                <motion.button
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => {
+                    soundManager.playClick();
+                    triggerHaptic(15);
+                    resetGame();
+                  }}
+                  className={`${t.button} px-5 py-3 rounded-xl font-bold shadow-lg`}
+                >
+                  Try Again
+                </motion.button>
+                <motion.button
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ delay: 0.1 }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleBackToMap}
+                  className="bg-gradient-to-r from-rose-500 to-pink-500 text-white px-5 py-3 rounded-xl font-bold shadow-lg flex items-center gap-2"
+                >
+                  <Map size={16} />
+                  Back to Map
+                </motion.button>
+              </>
+            )}
+            {playerWon && !isLastLevel && (
               <motion.button
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.1 }}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  soundManager.playClick();
-                  triggerHaptic(15);
-                  resetGame();
-                }}
-                className={`${t.button} px-5 py-3 rounded-xl font-bold shadow-lg`}
+                onClick={handleBackToMap}
+                className={`${t.card} px-4 py-3 rounded-xl font-medium ${t.text} flex items-center gap-2 hover:shadow-md transition-all`}
               >
-                Try Again
+                <Map size={16} />
+                Map
               </motion.button>
             )}
-            <motion.button
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.1 }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleBackToMap}
-              className={`${t.card} px-4 py-3 rounded-xl font-medium ${t.text} flex items-center gap-2 hover:shadow-md transition-all`}
-            >
-              <Map size={16} />
-              Map
-            </motion.button>
           </>
         )}
 

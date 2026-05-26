@@ -12,11 +12,7 @@ export default function CampaignMapScreen() {
     setScreen,
     campaignLevels,
     currentCampaignLevel,
-    setCurrentCampaignLevel,
-    setGridSize,
-    setWinCondition,
-    setGameMode,
-    initGame,
+    startCampaignLevel,
     theme,
   } = useGameStore();
   const t = THEMES[theme];
@@ -37,15 +33,9 @@ export default function CampaignMapScreen() {
 
     soundManager.playClick();
     triggerHaptic(15);
-    setCurrentCampaignLevel(levelId);
-    setGridSize(level.gridSize);
-    setWinCondition(level.winCondition);
-    setGameMode('campaign');
 
-    // Set AI difficulty for campaign level
-    useGameStore.setState({ aiDifficulty: level.difficulty });
-
-    initGame();
+    // Use atomic startCampaignLevel to batch all state changes and avoid race conditions
+    startCampaignLevel(levelId);
     setScreen('game');
   };
 

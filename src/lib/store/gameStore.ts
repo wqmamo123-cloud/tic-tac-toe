@@ -82,6 +82,7 @@ interface GameState {
   currentCampaignLevel: number;
   setCurrentCampaignLevel: (level: number) => void;
   completeCampaignLevel: (levelId: number, stars: number) => void;
+  startCampaignLevel: (levelId: number) => void;
 
   // Tournament
   tournamentPlayers: TournamentPlayer[];
@@ -192,12 +193,30 @@ export const useGameStore = create<GameState>()(
         if (idx !== -1) {
           levels[idx] = { ...levels[idx], completed: true, stars: Math.max(levels[idx].stars, stars) };
         }
+        // Explicitly unlock the next level by ensuring this level is marked completed
+        // (the isLevelUnlocked check in CampaignMapScreen depends on prevLevel.completed)
         set({ campaignLevels: levels });
 
         const completedCount = levels.filter((l) => l.completed).length;
         if (completedCount >= 5) get().unlockAchievement('campaign_5');
         if (completedCount >= 15) get().unlockAchievement('campaign_15');
         if (completedCount >= 30) get().unlockAchievement('campaign_30');
+      },
+
+      startCampaignLevel: (levelId) => {
+        const level = get().campaignLevels.find((l) => l.id === levelId);
+        if (!level) return;
+
+        // Atomically set all campaign state in a single batch to avoid race conditions
+        set({
+          currentCampaignLevel: levelId,
+          gridSize: level.gridSize,
+          winCondition: level.winCondition,
+          gameMode: 'campaign',
+          aiDifficulty: level.difficulty,
+        });
+
+        get().initGame();
       },
 
       // Tournament
@@ -520,6 +539,7 @@ export const useGameStore = create<GameState>()(
         stats: state.stats,
         achievements: state.achievements,
         campaignLevels: state.campaignLevels,
+        currentCampaignLevel: state.currentCampaignLevel,
         scores: state.scores,
         player1Name: state.player1Name,
         player2Name: state.player2Name,
