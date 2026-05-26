@@ -6,6 +6,7 @@ import { useGameStore } from '@/lib/store/gameStore';
 import { THEMES } from '@/lib/game/types';
 import { soundManager, triggerHaptic } from '@/lib/game/sounds';
 import { Settings, Trophy, BarChart3 } from 'lucide-react';
+import { App } from '@capacitor/app';
 
 export default function WelcomeScreen() {
   const { setScreen, theme, setScreen: navigate } = useGameStore();
@@ -17,11 +18,17 @@ export default function WelcomeScreen() {
     setScreen('mode-select');
   };
 
-  const handleExit = () => {
+  const handleExit = async () => {
     soundManager.playClick();
     triggerHaptic(10);
-    if (typeof window !== 'undefined') {
-      window.close();
+    try {
+      // Capacitor App plugin — works on Android/iOS native
+      await App.exitApp();
+    } catch {
+      // Fallback for web browser: try window.close()
+      if (typeof window !== 'undefined') {
+        window.close();
+      }
     }
   };
 
