@@ -55,9 +55,17 @@ jobs:
         working-directory: android
         run: ./gradlew assembleRelease --no-daemon --warning-mode all
 
+      - name: Find APK file
+        id: find_apk
+        run: |
+          APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
+          echo "Found APK at: $APK_PATH"
+          ls -la "$APK_PATH" || echo "APK not found!"
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: tic-tac-toe-release
-          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          path: ${{ steps.find_apk.outputs.apk_path }}
           retention-days: 30
